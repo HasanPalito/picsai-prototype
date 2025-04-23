@@ -9,6 +9,8 @@ import 'package:percent_indicator/percent_indicator.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'photo.dart';
+import 'uploadimage.dart';
 
 class SearchPageModel extends FlutterFlowModel<SearchPageWidget> {
   ///  State fields for stateful widgets in this page.
@@ -48,9 +50,12 @@ class _SearchPageWidgetState extends State<SearchPageWidget> {
   late SearchPageModel _model;
   double? USAGE;
   String? encryption_key;
-  Map<String, String> objectlist={};
-  List<MapEntry<String, String>> imageEntries=[];
-
+  Map<String, dynamic> objectlist={};
+  List<MapEntry<String, dynamic>> imageEntries=[];
+  List<MapEntry<String, dynamic>> imageshow=[];
+  String? SHOW_IMAGE_URL="";
+  String? SHOW_IMAGE_NAME="";
+  Map<String, dynamic> QUERRY_RESULT={};
   final scaffoldKey = GlobalKey<ScaffoldState>();
 
   Future<void> get_User_usage() async {
@@ -70,6 +75,15 @@ class _SearchPageWidgetState extends State<SearchPageWidget> {
     }
   }
 
+  Map<String, String> convertJson(Map<String, dynamic> jsonInput) {
+    Map<String, String> result = {};
+    jsonInput.forEach((key, value) {
+      String url = value['url'];
+      result[key] = url;
+    });
+    return result;
+  }
+
   Future<String?> getEncryptionKey() async {
     var key= await secureStorage.read(key: 'encryption_key');
     setState(() {
@@ -81,23 +95,65 @@ class _SearchPageWidgetState extends State<SearchPageWidget> {
   Future<void> get_start_file() async {
     print(widget.JWT_TOKEN);
     print("FETCHING IMAGE LIST");
+    var client = http.Client();
     String? encryptionKey = await getEncryptionKey();
     final data = 'user_key=${Uri.encodeQueryComponent(encryptionKey!)}&n=10';
-    final response = await http.post(
-        Uri.parse('https://elastic-surf-08465.pktriot.net/startfile'),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': 'Bearer ${widget.JWT_TOKEN}'
-        }
-        ,body: data
-
-    );
-    print(response.body);
+    var request = http.Request('POST', Uri.parse('https://elastic-surf-08465.pktriot.net/startfile/'))
+      ..headers.addAll({'Authorization': 'Bearer ${widget.JWT_TOKEN}','Content-Type': 'application/x-www-form-urlencoded'})
+      ..body = data;
+    var response = await client.send(request);
+    print(response);
+    var responseBody = await response.stream.bytesToString();
+    print(responseBody);
     print("THIS IS THE IMAGE LIST");
     if (response.statusCode == 200) {
-      var respn =jsonDecode(response.body);
+      var respn =jsonDecode(responseBody);
       setState(() {
-        objectlist=respn;
+        objectlist=respn["result"];
+        imageEntries = objectlist.entries.toList();
+      });
+    }
+  }
+
+  Future<void> get_raw_image(filename) async {
+    print(widget.JWT_TOKEN);
+    print("FETCHING RAW IMAGE");
+    var client = http.Client();
+    String? encryptionKey = await getEncryptionKey();
+    final data = 'user_key=${Uri.encodeQueryComponent(encryptionKey!)}&filename=${filename}';
+    var request = http.Request('POST', Uri.parse('https://elastic-surf-08465.pktriot.net/image/raw'))
+      ..headers.addAll({'Authorization': 'Bearer ${widget.JWT_TOKEN}','Content-Type': 'application/x-www-form-urlencoded'})
+      ..body = data;
+    var response = await client.send(request);
+    print(response);
+    var responseBody = await response.stream.bytesToString();
+    print(responseBody);
+    if (response.statusCode == 200) {
+      var respn =jsonDecode(responseBody);
+      setState(() {
+        SHOW_IMAGE_NAME = respn.keys.first;
+        SHOW_IMAGE_URL = respn[SHOW_IMAGE_NAME];
+      });
+    }
+  }
+
+  Future<void> querryfile(querry) async {
+    print("FETCHING QUEERY");
+    var client = http.Client();
+    String? encryptionKey = await getEncryptionKey();
+    final data = 'user_key=${Uri.encodeQueryComponent(encryptionKey!)}&querry=${querry}&n=10';
+    var request = http.Request('POST', Uri.parse('https://elastic-surf-08465.pktriot.net/queeryfile/'))
+      ..headers.addAll({'Authorization': 'Bearer ${widget.JWT_TOKEN}','Content-Type': 'application/x-www-form-urlencoded'})
+      ..body = data;
+    var response = await client.send(request);
+    print(response);
+    var responseBody = await response.stream.bytesToString();
+    print(responseBody);
+    if (response.statusCode == 200) {
+      var respn =jsonDecode(responseBody);
+      setState(() {
+        QUERRY_RESULT= respn["result"];
+        objectlist=convertJson(QUERRY_RESULT);
         imageEntries = objectlist.entries.toList();
       });
     }
@@ -139,6 +195,30 @@ class _SearchPageWidgetState extends State<SearchPageWidget> {
       child: Scaffold(
         key: scaffoldKey,
         backgroundColor: FlutterFlowTheme.of(context).primaryBackground,
+        bottomNavigationBar:BottomNavigationBar(
+            currentIndex: 0, // Highlight the selected tab
+            onTap: (index) {
+              setState(() {
+                print(index);
+              });
+              if (index==1){
+                print("what na");
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => UploadimageWidget(JWT_TOKEN: widget.JWT_TOKEN,))
+                );
+              }
+            },
+            items: [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.search),
+                label: "Search",
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person),
+                label: "upload",
+              ),
+            ]),
         appBar: PreferredSize(
           preferredSize:
           Size.fromHeight(MediaQuery.sizeOf(context).height * 0.075),
@@ -321,8 +401,12 @@ class _SearchPageWidgetState extends State<SearchPageWidget> {
                         padding:
                         EdgeInsetsDirectional.fromSTEB(0.0, 0.0, 10.0, 0.0),
                         child: FFButtonWidget(
-                          onPressed: () {
-                            print('Button pressed ...');
+                          onPressed: () async{
+                            print('search button pressed');
+                            String? text = _model.textController.text;
+                            if (text.isNotEmpty) {
+                              await querryfile(text);
+                            }
                           },
                           text: '',
                           icon: Icon(
@@ -359,7 +443,9 @@ class _SearchPageWidgetState extends State<SearchPageWidget> {
               Expanded(
                 child: Padding(
                   padding: EdgeInsetsDirectional.fromSTEB(10.0, 0.0, 10.0, 0.0),
-                  child: MasonryGridView.builder(
+                  child: SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.8, // Adjust height as needed
+                    child: MasonryGridView.builder(
                     gridDelegate:
                     SliverSimpleGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
@@ -371,24 +457,42 @@ class _SearchPageWidgetState extends State<SearchPageWidget> {
                       final key = imageEntries[index].key; // e.g., "image1"
                       final url = imageEntries[index].value;
                       return GestureDetector(
-                        onTap: () {
+                        onTap: () async {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('Tapped on $key')),
                           );
+                          await get_raw_image(key);
+                          try{
+                            var description = jsonDecode(QUERRY_RESULT[SHOW_IMAGE_NAME]["description"]);
+                            print("ATTENTION HERE");
+                            print(description["image_description"]);
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => PhotoWidget(filename: SHOW_IMAGE_NAME,pic_url: SHOW_IMAGE_URL,description: description["image_description"],))
+                            );
+                          }
+                          catch(e){
+                            print(e);
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => PhotoWidget(filename: SHOW_IMAGE_NAME,pic_url: SHOW_IMAGE_URL,))
+                            );
+                          }
                         },
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8.0),
                           child: Image.network(
                             url,
-                            width: double.infinity,
-                            height: double.infinity,
                             fit: BoxFit.cover,
+                            width: double.infinity,
+
                           ),
                         ),
                       );// e.g., the URL
                     },
                   ),
                 ),
+              )
               ),
             ],
           ),

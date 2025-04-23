@@ -64,8 +64,9 @@ class _TestWidgetState extends State<TestWidget> {
   String? JWT_token;
   String? ENCRYPTION_KEY;
 
-  Future<void> saveEncryptionKey(String key) async {
+  Future<void> saveEncryptionKey(String key,String Jwt_token) async {
     await secureStorage.write(key: 'encryption_key', value: key);
+    await secureStorage.write(key: 'jwt token', value: Jwt_token);
   }
 
   Future<void> _handleSignIn() async {
@@ -123,7 +124,7 @@ class _TestWidgetState extends State<TestWidget> {
             setState(() {
               ENCRYPTION_KEY = respn["key"];
               print(ENCRYPTION_KEY);
-              saveEncryptionKey(ENCRYPTION_KEY!);
+              saveEncryptionKey(ENCRYPTION_KEY!,JWT_token!);
             });
 
           }
